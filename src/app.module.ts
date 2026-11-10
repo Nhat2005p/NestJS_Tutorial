@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   AcceptLanguageResolver,
@@ -10,9 +11,11 @@ import {
 import * as path from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AttachmentsModule } from './attachments/attachments.module';
 import { AuthModule } from './auth/auth.module';
 import { getDataSourceOptions } from './database/data-source';
 import { RedisModule } from './redis/redis.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -23,6 +26,13 @@ import { RedisModule } from './redis/redis.module';
     }),
     TypeOrmModule.forRootAsync({
       useFactory: () => getDataSourceOptions(),
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: path.join(process.cwd(), 'uploads/avatars'),
+      serveRoot: '/public/avatars',
+      serveStaticOptions: {
+        index: false,
+      },
     }),
     I18nModule.forRoot({
       fallbackLanguage: 'en',
@@ -38,6 +48,8 @@ import { RedisModule } from './redis/redis.module';
     }),
     RedisModule,
     AuthModule,
+    UsersModule,
+    AttachmentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
