@@ -1,7 +1,7 @@
 {
   "name": "nestjs-tutorial",
   "version": "1.0.0",
-  "description": "Pull 2 - Setup migrate database thủ công + Authentication (Register, Login, Logout Redis Blacklist, Get Current User)",
+  "description": "Pull 3 - API CRUD chuẩn RESTful (Items Resource), Serializer, Filter, Search & Pagination",
   "author": "Nhat2005p",
   "private": true,
   "license": "UNLICENSED",
