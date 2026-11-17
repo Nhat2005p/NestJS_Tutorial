@@ -22,9 +22,9 @@ async function bootstrap() {
 
   // Cấu hình Swagger Documentation tại /api/docs
   const config = new DocumentBuilder()
-    .setTitle('NestJS Tutorial - User APIs & Attachments')
+    .setTitle('NestJS Tutorial - Articles & Conduit API')
     .setDescription(
-      'The NestJS Tutorial API description - Update User, Avatar Upload, Get Profile, Follow/Unfollow, Polymorphic Attachments',
+      'The NestJS Tutorial API description - Auth, Users, Polymorphic Attachments, Articles CRUD, Feed, Favorite/Unfavorite',
     )
     .setVersion('1.0')
     .addBearerAuth()
@@ -32,6 +32,7 @@ async function bootstrap() {
     .addTag('Auth')
     .addTag('Users')
     .addTag('Attachments')
+    .addTag('Articles')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

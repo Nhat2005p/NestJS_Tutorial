@@ -1,7 +1,7 @@
 {
   "name": "nestjs-tutorial",
   "version": "1.0.0",
-  "description": "Pull 3 - API CRUD chuẩn RESTful (Items Resource), Serializer, Filter, Search & Pagination",
+  "description": "Pull 4 - CRUD Articles: Create, List, Feed, Get, Update, Delete, Favorite, Unfavorite",
   "author": "Nhat2005p",
   "private": true,
   "license": "UNLICENSED",

@@ -11,6 +11,7 @@ import {
 import * as path from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { ArticlesModule } from './articles/articles.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AuthModule } from './auth/auth.module';
 import { getDataSourceOptions } from './database/data-source';
@@ -50,6 +51,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     UsersModule,
     AttachmentsModule,
+    ArticlesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
