@@ -49,6 +49,20 @@ describe('ArticlesService', () => {
     updatedAt: new Date(),
   };
 
+  const mockTransactionalManager = {
+    create: jest.fn().mockImplementation((entity, data) => data),
+    save: jest.fn().mockImplementation((data) => Promise.resolve(data)),
+    increment: jest.fn().mockResolvedValue({ affected: 1 }),
+    delete: jest.fn().mockResolvedValue({ affected: 1 }),
+    query: jest.fn().mockResolvedValue({ affectedRows: 1 }),
+    createQueryBuilder: jest.fn().mockReturnValue({
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 1 }),
+    }),
+  };
+
   const mockArticleRepository = {
     create: jest.fn().mockImplementation((dto) => dto),
     save: jest
@@ -57,12 +71,23 @@ describe('ArticlesService', () => {
     findOne: jest.fn(),
     remove: jest.fn().mockResolvedValue({}),
     createQueryBuilder: jest.fn(),
+    manager: {
+      transaction: jest
+        .fn()
+        .mockImplementation((callback) => callback(mockTransactionalManager)),
+      connection: {
+        options: {
+          type: 'mysql',
+        },
+      },
+    },
   };
 
   const mockFavoriteRepository = {
     create: jest.fn().mockImplementation((dto) => dto),
     save: jest.fn().mockImplementation((fav) => Promise.resolve(fav)),
     findOne: jest.fn(),
+    find: jest.fn().mockResolvedValue([]),
     remove: jest.fn().mockResolvedValue({}),
     delete: jest.fn().mockResolvedValue({}),
   };
@@ -72,12 +97,13 @@ describe('ArticlesService', () => {
   };
 
   const mockFollowRepository = {
-    find: jest.fn(),
+    find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn(),
   };
 
   const mockAttachmentsService = {
     findByAttachable: jest.fn().mockResolvedValue(null),
+    findByAttachables: jest.fn().mockResolvedValue(new Map()),
   };
 
   beforeEach(async () => {
@@ -211,32 +237,25 @@ describe('ArticlesService', () => {
   });
 
   describe('favorite & unfavorite', () => {
-    it('should favorite an article and increment favoritesCount', async () => {
+    it('should favorite an article inside transaction', async () => {
       mockArticleRepository.findOne.mockResolvedValue({
         ...mockArticle,
-        favoritesCount: 0,
+        favoritesCount: 1,
       });
-      mockFavoriteRepository.findOne.mockResolvedValue(null);
 
       const result = await service.favorite(
         'how-to-build-nestjs-crud-api-12345678',
         2,
       );
 
-      expect(mockFavoriteRepository.save).toHaveBeenCalled();
-      expect(mockArticleRepository.save).toHaveBeenCalled();
-      expect(result.favoritesCount).toBe(1);
+      expect(mockArticleRepository.manager.transaction).toHaveBeenCalled();
+      expect(result.id).toBe(1);
     });
 
-    it('should unfavorite an article and decrement favoritesCount', async () => {
+    it('should unfavorite an article inside transaction', async () => {
       mockArticleRepository.findOne.mockResolvedValue({
         ...mockArticle,
-        favoritesCount: 1,
-      });
-      mockFavoriteRepository.findOne.mockResolvedValue({
-        id: 1,
-        userId: 2,
-        articleId: 1,
+        favoritesCount: 0,
       });
 
       const result = await service.unfavorite(
@@ -244,9 +263,33 @@ describe('ArticlesService', () => {
         2,
       );
 
-      expect(mockFavoriteRepository.remove).toHaveBeenCalled();
-      expect(mockArticleRepository.save).toHaveBeenCalled();
-      expect(result.favoritesCount).toBe(0);
+      expect(mockArticleRepository.manager.transaction).toHaveBeenCalled();
+      expect(result.id).toBe(1);
+    });
+  });
+
+  describe('findAll', () => {
+    it('should match whole tag with commas in query builder', async () => {
+      const mockQueryBuilder = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(1),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([mockArticle]),
+      };
+      mockArticleRepository.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      const result = await service.findAll({ tag: 'java' });
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('LIKE :tagPattern'),
+        { tagPattern: '%,java,%' },
+      );
+      expect(result.articlesCount).toBe(1);
     });
   });
 

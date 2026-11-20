@@ -1,56 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
-
-export class UpdateArticleDataDto {
-  @ApiPropertyOptional({
-    example: 'Updated NestJS CRUD API Guide',
-    description: 'Tiêu đề bài viết mới',
-  })
-  @IsOptional()
-  @IsString()
-  title?: string;
-
-  @ApiPropertyOptional({
-    example: 'Cập nhật hướng dẫn xây dựng API CRUD với NestJS',
-    description: 'Mô tả bài viết mới',
-  })
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiPropertyOptional({
-    example: 'Nội dung cập nhật mới...',
-    description: 'Nội dung bài viết mới',
-  })
-  @IsOptional()
-  @IsString()
-  body?: string;
-
-  @ApiPropertyOptional({
-    example: ['nestjs', 'v10', 'tutorial'],
-    type: [String],
-    description: 'Danh sách thẻ tag mới',
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  tagList?: string[];
-}
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class UpdateArticleDto {
-  @ApiPropertyOptional({ type: UpdateArticleDataDto })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => UpdateArticleDataDto)
-  article?: UpdateArticleDataDto;
-
   @ApiPropertyOptional({
     example: 'Updated NestJS CRUD API Guide',
     description: 'Tiêu đề bài viết mới',
   })
   @IsOptional()
-  @IsString()
+  @IsNotEmpty({ message: 'Tiêu đề không được để trống nếu được cập nhật' })
+  @IsString({ message: 'Tiêu đề phải là chuỗi' })
   title?: string;
 
   @ApiPropertyOptional({
@@ -58,7 +16,8 @@ export class UpdateArticleDto {
     description: 'Mô tả bài viết mới',
   })
   @IsOptional()
-  @IsString()
+  @IsNotEmpty({ message: 'Mô tả không được để trống nếu được cập nhật' })
+  @IsString({ message: 'Mô tả phải là chuỗi' })
   description?: string;
 
   @ApiPropertyOptional({
@@ -66,7 +25,8 @@ export class UpdateArticleDto {
     description: 'Nội dung bài viết mới',
   })
   @IsOptional()
-  @IsString()
+  @IsNotEmpty({ message: 'Nội dung không được để trống nếu được cập nhật' })
+  @IsString({ message: 'Nội dung phải là chuỗi' })
   body?: string;
 
   @ApiPropertyOptional({

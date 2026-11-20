@@ -133,16 +133,56 @@ describe('Articles CRUD & Feed Flow (e2e)', () => {
       .expect(201);
   });
 
-  it('GET /api/articles - List Articles & Filtering by tag and author', async () => {
+  it('GET /api/articles - List Articles & Filtering by whole tag and author', async () => {
+    // Create articles for testing exact tag match (java vs javascript)
+    await request(app.getHttpServer())
+      .post('/api/articles')
+      .set('Authorization', `Bearer ${user1Token}`)
+      .send({
+        title: 'Learn JavaScript from scratch',
+        description: 'JavaScript basics',
+        body: 'Content for JavaScript...',
+        tagList: ['javascript'],
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/articles')
+      .set('Authorization', `Bearer ${user1Token}`)
+      .send({
+        title: 'Learn Java enterprise',
+        description: 'Java basics',
+        body: 'Content for Java...',
+        tagList: ['java'],
+      })
+      .expect(201);
+
     // List all
     const all = await request(app.getHttpServer())
       .get('/api/articles')
       .expect(200);
 
-    expect(all.body.articlesCount).toBe(2);
-    expect(all.body.articles.length).toBe(2);
+    expect(all.body.articlesCount).toBe(4);
 
-    // Filter by tag
+    // Filter by tag=java should ONLY match 'java', NOT 'javascript'
+    const byTagJava = await request(app.getHttpServer())
+      .get('/api/articles?tag=java')
+      .expect(200);
+
+    expect(byTagJava.body.articlesCount).toBe(1);
+    expect(byTagJava.body.articles[0].title).toBe('Learn Java enterprise');
+
+    // Filter by tag=javascript
+    const byTagJs = await request(app.getHttpServer())
+      .get('/api/articles?tag=javascript')
+      .expect(200);
+
+    expect(byTagJs.body.articlesCount).toBe(1);
+    expect(byTagJs.body.articles[0].title).toBe(
+      'Learn JavaScript from scratch',
+    );
+
+    // Filter by tag=nestjs
     const byTag = await request(app.getHttpServer())
       .get('/api/articles?tag=nestjs')
       .expect(200);
@@ -155,7 +195,7 @@ describe('Articles CRUD & Feed Flow (e2e)', () => {
       .get('/api/articles?author=Author One')
       .expect(200);
 
-    expect(byAuthor.body.articlesCount).toBe(2);
+    expect(byAuthor.body.articlesCount).toBe(4);
   });
 
   it('GET /api/articles/:slug - Get Article by slug', async () => {
@@ -169,7 +209,7 @@ describe('Articles CRUD & Feed Flow (e2e)', () => {
     expect(res.body.favoritesCount).toBe(0);
   });
 
-  it('POST /api/articles/:slug/favorite - Favorite Article', async () => {
+  it('POST /api/articles/:slug/favorite - Favorite Article (idempotent)', async () => {
     const res = await request(app.getHttpServer())
       .post(`/api/articles/${article1Slug}/favorite`)
       .set('Authorization', `Bearer ${user2Token}`)
@@ -177,6 +217,15 @@ describe('Articles CRUD & Feed Flow (e2e)', () => {
 
     expect(res.body.favorited).toBe(true);
     expect(res.body.favoritesCount).toBe(1);
+
+    // Favorite again: should be idempotent and not crash with 500
+    const resAgain = await request(app.getHttpServer())
+      .post(`/api/articles/${article1Slug}/favorite`)
+      .set('Authorization', `Bearer ${user2Token}`)
+      .expect(200);
+
+    expect(resAgain.body.favorited).toBe(true);
+    expect(resAgain.body.favoritesCount).toBe(1);
   });
 
   it('GET /api/articles/feed - Feed Articles (follow author first)', async () => {
@@ -199,7 +248,7 @@ describe('Articles CRUD & Feed Flow (e2e)', () => {
       .set('Authorization', `Bearer ${user2Token}`)
       .expect(200);
 
-    expect(feedAfter.body.articlesCount).toBe(2);
+    expect(feedAfter.body.articlesCount).toBe(4);
   });
 
   it('PATCH /api/articles/:slug - Update Article (author only)', async () => {
@@ -209,6 +258,13 @@ describe('Articles CRUD & Feed Flow (e2e)', () => {
       .set('Authorization', `Bearer ${user2Token}`)
       .send({ title: 'Hacked Title' })
       .expect(403);
+
+    // 400 when empty title is provided
+    await request(app.getHttpServer())
+      .patch(`/api/articles/${article1Slug}`)
+      .set('Authorization', `Bearer ${user1Token}`)
+      .send({ title: '' })
+      .expect(400);
 
     // 200 when Author edits
     const res = await request(app.getHttpServer())

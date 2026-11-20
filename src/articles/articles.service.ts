@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { AttachmentsService } from '../attachments/attachments.service';
 import { Follow } from '../users/entities/follow.entity';
@@ -51,51 +51,75 @@ export class ArticlesService {
     return `${baseSlug || 'article'}-${suffix}`;
   }
 
-  private async buildArticleResponse(
-    article: Article,
+  /**
+   * Batch load favorites, follows, and avatars for an array of articles to avoid N+1 queries.
+   */
+  private async buildArticleResponses(
+    articles: Article[],
     currentUserId?: number,
-  ): Promise<ArticleResponseDto> {
-    let favorited = false;
-    if (currentUserId) {
-      const fav = await this.favoriteRepository.findOne({
-        where: { userId: currentUserId, articleId: article.id },
-      });
-      favorited = !!fav;
+  ): Promise<ArticleResponseDto[]> {
+    if (!articles || articles.length === 0) {
+      return [];
     }
 
-    let following = false;
-    if (
-      currentUserId &&
-      article.authorId &&
-      currentUserId !== article.authorId
-    ) {
-      const follow = await this.followRepository.findOne({
-        where: { followerId: currentUserId, followingId: article.authorId },
-      });
-      following = !!follow;
-    }
+    const articleIds = articles.map((a) => a.id);
+    const authorIds = Array.from(new Set(articles.map((a) => a.authorId)));
 
-    const avatar = await this.attachmentsService.findByAttachable(
-      'User',
-      article.authorId,
-    );
-
-    return plainToInstance(
-      ArticleResponseDto,
-      {
-        ...article,
-        tagList: article.tagList || [],
-        favorited,
-        author: {
-          id: article.author?.id || article.authorId,
-          name: article.author?.name || '',
-          bio: article.author?.bio,
-          avatar,
-          following,
+    // 1. Batch query favorites for current user
+    const favoritedArticleIdSet = new Set<number>();
+    if (currentUserId && articleIds.length > 0) {
+      const favorites = await this.favoriteRepository.find({
+        where: {
+          userId: currentUserId,
+          articleId: In(articleIds),
         },
-      },
-      { excludeExtraneousValues: true },
+      });
+      favorites.forEach((fav) => favoritedArticleIdSet.add(fav.articleId));
+    }
+
+    // 2. Batch query follows for current user
+    const followedAuthorIdSet = new Set<number>();
+    if (currentUserId && authorIds.length > 0) {
+      const follows = await this.followRepository.find({
+        where: {
+          followerId: currentUserId,
+          followingId: In(authorIds),
+        },
+      });
+      follows.forEach((f) => followedAuthorIdSet.add(f.followingId));
+    }
+
+    // 3. Batch query avatars for authors
+    const authorAvatarMap = await this.attachmentsService.findByAttachables(
+      'User',
+      authorIds,
     );
+
+    return articles.map((article) => {
+      const favorited = favoritedArticleIdSet.has(article.id);
+      const following =
+        currentUserId && article.authorId && currentUserId !== article.authorId
+          ? followedAuthorIdSet.has(article.authorId)
+          : false;
+      const avatar = authorAvatarMap.get(article.authorId) || null;
+
+      return plainToInstance(
+        ArticleResponseDto,
+        {
+          ...article,
+          tagList: article.tagList || [],
+          favorited,
+          author: {
+            id: article.author?.id || article.authorId,
+            name: article.author?.name || '',
+            bio: article.author?.bio,
+            avatar,
+            following,
+          },
+        },
+        { excludeExtraneousValues: true },
+      );
+    });
   }
 
   private async findArticleEntity(
@@ -131,11 +155,9 @@ export class ArticlesService {
     authorId: number,
     createArticleDto: CreateArticleDto,
   ): Promise<ArticleResponseDto> {
-    const data = createArticleDto.article || createArticleDto;
-
-    if (!data.title || !data.description || !data.body) {
+    if (!createArticleDto.title || !createArticleDto.body) {
       throw new BadRequestException(
-        'Vui lòng điền đầy đủ tiêu đề, mô tả và nội dung bài viết',
+        'Vui lòng điền đầy đủ tiêu đề và nội dung bài viết',
       );
     }
 
@@ -146,21 +168,22 @@ export class ArticlesService {
       throw new NotFoundException('Tác giả không tồn tại');
     }
 
-    const slug = this.generateSlug(data.title);
+    const slug = this.generateSlug(createArticleDto.title);
 
     const article = this.articleRepository.create({
       slug,
-      title: data.title,
-      description: data.description,
-      body: data.body,
-      tagList: data.tagList || [],
+      title: createArticleDto.title,
+      description: createArticleDto.description,
+      body: createArticleDto.body,
+      tagList: createArticleDto.tagList || [],
       favoritesCount: 0,
       authorId,
       author,
     });
 
     const savedArticle = await this.articleRepository.save(article);
-    return this.buildArticleResponse(savedArticle, authorId);
+    const [result] = await this.buildArticleResponses([savedArticle], authorId);
+    return result;
   }
 
   async findAll(
@@ -172,8 +195,22 @@ export class ArticlesService {
       .leftJoinAndSelect('article.author', 'author')
       .orderBy('article.createdAt', 'DESC');
 
+    // So khớp nguyên tag: CONCAT(',', article.tag_list, ',') LIKE '%,tag,%'
+    // Chống trường hợp tag 'java' khớp nhầm 'javascript'
     if (query.tag) {
-      qb.andWhere('article.tag_list LIKE :tag', { tag: `%${query.tag}%` });
+      const cleanTag = query.tag.trim();
+      const isSqlite =
+        this.articleRepository.manager.connection.options.type === 'sqljs';
+
+      if (isSqlite) {
+        qb.andWhere("',' || article.tag_list || ',' LIKE :tagPattern", {
+          tagPattern: `%,${cleanTag},%`,
+        });
+      } else {
+        qb.andWhere("CONCAT(',', article.tag_list, ',') LIKE :tagPattern", {
+          tagPattern: `%,${cleanTag},%`,
+        });
+      }
     }
 
     if (query.author) {
@@ -207,10 +244,9 @@ export class ArticlesService {
       .take(query.limit || 20)
       .getMany();
 
-    const formattedArticles = await Promise.all(
-      articles.map((article) =>
-        this.buildArticleResponse(article, currentUserId),
-      ),
+    const formattedArticles = await this.buildArticleResponses(
+      articles,
+      currentUserId,
     );
 
     return {
@@ -248,10 +284,9 @@ export class ArticlesService {
       .take(query.limit || 20)
       .getMany();
 
-    const formattedArticles = await Promise.all(
-      articles.map((article) =>
-        this.buildArticleResponse(article, currentUserId),
-      ),
+    const formattedArticles = await this.buildArticleResponses(
+      articles,
+      currentUserId,
     );
 
     return {
@@ -265,7 +300,8 @@ export class ArticlesService {
     currentUserId?: number,
   ): Promise<ArticleResponseDto> {
     const article = await this.findArticleEntity(identifier);
-    return this.buildArticleResponse(article, currentUserId);
+    const [result] = await this.buildArticleResponses([article], currentUserId);
+    return result;
   }
 
   async update(
@@ -279,24 +315,26 @@ export class ArticlesService {
       throw new ForbiddenException('Bạn không có quyền chỉnh sửa bài viết này');
     }
 
-    const data = updateArticleDto.article || updateArticleDto;
-
-    if (data.title !== undefined) {
-      article.title = data.title;
-      article.slug = this.generateSlug(data.title);
+    if (updateArticleDto.title !== undefined) {
+      article.title = updateArticleDto.title;
+      article.slug = this.generateSlug(updateArticleDto.title);
     }
-    if (data.description !== undefined) {
-      article.description = data.description;
+    if (updateArticleDto.description !== undefined) {
+      article.description = updateArticleDto.description;
     }
-    if (data.body !== undefined) {
-      article.body = data.body;
+    if (updateArticleDto.body !== undefined) {
+      article.body = updateArticleDto.body;
     }
-    if (data.tagList !== undefined) {
-      article.tagList = data.tagList;
+    if (updateArticleDto.tagList !== undefined) {
+      article.tagList = updateArticleDto.tagList;
     }
 
     const savedArticle = await this.articleRepository.save(article);
-    return this.buildArticleResponse(savedArticle, currentUserId);
+    const [result] = await this.buildArticleResponses(
+      [savedArticle],
+      currentUserId,
+    );
+    return result;
   }
 
   async delete(
@@ -309,7 +347,7 @@ export class ArticlesService {
       throw new ForbiddenException('Bạn không có quyền xóa bài viết này');
     }
 
-    await this.favoriteRepository.delete({ articleId: article.id });
+    // onDelete: 'CASCADE' trong migration đã tự động dọn dẹp các bản ghi trong article_favorites
     await this.articleRepository.remove(article);
 
     return {
@@ -323,22 +361,44 @@ export class ArticlesService {
   ): Promise<ArticleResponseDto> {
     const article = await this.findArticleEntity(identifier);
 
-    const existing = await this.favoriteRepository.findOne({
-      where: { userId: currentUserId, articleId: article.id },
-    });
+    // Bọc trong transaction và tăng bằng increment().
+    // Nếu gặp lỗi trùng unique key (ER_DUP_ENTRY / SQLITE_CONSTRAINT) thì coi như đã favorite (idempotent).
+    await this.articleRepository.manager.transaction(
+      async (transactionalEntityManager) => {
+        try {
+          const fav = transactionalEntityManager.create(ArticleFavorite, {
+            userId: currentUserId,
+            articleId: article.id,
+          });
+          await transactionalEntityManager.save(ArticleFavorite, fav);
 
-    if (!existing) {
-      const fav = this.favoriteRepository.create({
-        userId: currentUserId,
-        articleId: article.id,
-      });
-      await this.favoriteRepository.save(fav);
+          await transactionalEntityManager.increment(
+            Article,
+            { id: article.id },
+            'favoritesCount',
+            1,
+          );
+        } catch (error: any) {
+          const isDuplicate =
+            error.code === 'ER_DUP_ENTRY' ||
+            error.code === 'SQLITE_CONSTRAINT' ||
+            error.message?.includes('Duplicate') ||
+            error.message?.includes('UNIQUE') ||
+            error.message?.includes('constraint');
 
-      article.favoritesCount += 1;
-      await this.articleRepository.save(article);
-    }
+          if (!isDuplicate) {
+            throw error;
+          }
+        }
+      },
+    );
 
-    return this.buildArticleResponse(article, currentUserId);
+    const updatedArticle = await this.findArticleEntity(identifier);
+    const [result] = await this.buildArticleResponses(
+      [updatedArticle],
+      currentUserId,
+    );
+    return result;
   }
 
   async unfavorite(
@@ -347,17 +407,36 @@ export class ArticlesService {
   ): Promise<ArticleResponseDto> {
     const article = await this.findArticleEntity(identifier);
 
-    const existing = await this.favoriteRepository.findOne({
-      where: { userId: currentUserId, articleId: article.id },
-    });
+    // Bọc trong transaction và giảm favoritesCount an toàn (không âm)
+    await this.articleRepository.manager.transaction(
+      async (transactionalEntityManager) => {
+        const deleteResult = await transactionalEntityManager.delete(
+          ArticleFavorite,
+          {
+            userId: currentUserId,
+            articleId: article.id,
+          },
+        );
 
-    if (existing) {
-      await this.favoriteRepository.remove(existing);
+        if (deleteResult.affected && deleteResult.affected > 0) {
+          await transactionalEntityManager
+            .createQueryBuilder()
+            .update(Article)
+            .set({
+              favoritesCount: () =>
+                'CASE WHEN favorites_count > 0 THEN favorites_count - 1 ELSE 0 END',
+            })
+            .where('id = :id', { id: article.id })
+            .execute();
+        }
+      },
+    );
 
-      article.favoritesCount = Math.max(0, article.favoritesCount - 1);
-      await this.articleRepository.save(article);
-    }
-
-    return this.buildArticleResponse(article, currentUserId);
+    const updatedArticle = await this.findArticleEntity(identifier);
+    const [result] = await this.buildArticleResponses(
+      [updatedArticle],
+      currentUserId,
+    );
+    return result;
   }
 }

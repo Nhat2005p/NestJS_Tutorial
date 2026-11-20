@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Attachment } from './entities/attachment.entity';
 
 @Injectable()
@@ -37,6 +37,31 @@ export class AttachmentsService {
       where: { attachableType, attachableId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async findByAttachables(
+    attachableType: string,
+    attachableIds: number[],
+  ): Promise<Map<number, Attachment>> {
+    if (!attachableIds || attachableIds.length === 0) {
+      return new Map();
+    }
+
+    const attachments = await this.attachmentRepository.find({
+      where: {
+        attachableType,
+        attachableId: In(attachableIds),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    const map = new Map<number, Attachment>();
+    for (const attachment of attachments) {
+      if (!map.has(attachment.attachableId)) {
+        map.set(attachment.attachableId, attachment);
+      }
+    }
+    return map;
   }
 
   async findById(id: string): Promise<Attachment | null> {
