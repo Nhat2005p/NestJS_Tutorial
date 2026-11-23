@@ -14,6 +14,7 @@ import { AppService } from './app.service';
 import { ArticlesModule } from './articles/articles.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AuthModule } from './auth/auth.module';
+import { CommentsModule } from './comments/comments.module';
 import { getDataSourceOptions } from './database/data-source';
 import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
@@ -52,6 +53,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     AttachmentsModule,
     ArticlesModule,
+    CommentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

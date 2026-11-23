@@ -49,6 +49,7 @@ describe('Articles CRUD & Feed Flow (e2e)', () => {
     await app.init();
 
     dataSource = app.get(DataSource);
+    await dataSource.dropDatabase();
     await dataSource.runMigrations();
   });
 
