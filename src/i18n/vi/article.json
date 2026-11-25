@@ -1,0 +1,8 @@
+{
+  "not_found": "Bài viết không tồn tại",
+  "forbidden_edit": "Bạn không có quyền chỉnh sửa bài viết này",
+  "forbidden_delete": "Bạn không có quyền xóa bài viết này",
+  "delete_success": "Xóa bài viết thành công",
+  "author_not_found": "Tác giả không tồn tại",
+  "validation_failed": "Vui lòng điền đầy đủ tiêu đề và nội dung bài viết"
+}
