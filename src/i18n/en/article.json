@@ -1,0 +1,8 @@
+{
+  "not_found": "Article does not exist",
+  "forbidden_edit": "You do not have permission to edit this article",
+  "forbidden_delete": "You do not have permission to delete this article",
+  "delete_success": "Article deleted successfully",
+  "author_not_found": "Author does not exist",
+  "validation_failed": "Please provide title and body for the article"
+}
