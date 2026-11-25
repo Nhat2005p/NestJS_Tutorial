@@ -3,9 +3,11 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
+import { I18nService } from 'nestjs-i18n';
 import { In, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { AttachmentsService } from '../attachments/attachments.service';
@@ -34,6 +36,8 @@ export class ArticlesService {
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
     private readonly attachmentsService: AttachmentsService,
+    @Optional()
+    private readonly i18n?: I18nService,
   ) {}
 
   private generateSlug(title: string): string {
@@ -122,9 +126,7 @@ export class ArticlesService {
     });
   }
 
-  private async findArticleEntity(
-    identifier: string | number,
-  ): Promise<Article> {
+  async findArticleEntity(identifier: string | number): Promise<Article> {
     const isNum =
       typeof identifier === 'number' ||
       (!isNaN(Number(identifier)) &&
@@ -145,7 +147,10 @@ export class ArticlesService {
     }
 
     if (!article) {
-      throw new NotFoundException(`Bài viết '${identifier}' không tồn tại`);
+      const message = this.i18n
+        ? this.i18n.t('article.not_found')
+        : `Bài viết '${identifier}' không tồn tại`;
+      throw new NotFoundException(message);
     }
 
     return article;

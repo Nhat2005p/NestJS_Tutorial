@@ -1,13 +1,13 @@
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
+import { I18nService } from 'nestjs-i18n';
 import { In, Repository } from 'typeorm';
-import { Article } from '../articles/entities/article.entity';
+import { ArticlesService } from '../articles/articles.service';
 import { AttachmentsService } from '../attachments/attachments.service';
 import { Follow } from '../users/entities/follow.entity';
 import { User } from '../users/entities/user.entity';
@@ -23,41 +23,12 @@ export class CommentsService {
   constructor(
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
-    @InjectRepository(Article)
-    private readonly articleRepository: Repository<Article>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    private readonly articlesService: ArticlesService,
     @InjectRepository(Follow)
     private readonly followRepository: Repository<Follow>,
     private readonly attachmentsService: AttachmentsService,
+    private readonly i18n: I18nService,
   ) {}
-
-  private async findArticleEntity(
-    identifier: string | number,
-  ): Promise<Article> {
-    const isNum =
-      typeof identifier === 'number' ||
-      (!isNaN(Number(identifier)) &&
-        !isNaN(parseFloat(identifier as string)) &&
-        !String(identifier).includes('-'));
-
-    let article: Article | null = null;
-    if (isNum) {
-      article = await this.articleRepository.findOne({
-        where: [{ id: Number(identifier) }, { slug: String(identifier) }],
-      });
-    } else {
-      article = await this.articleRepository.findOne({
-        where: { slug: String(identifier) },
-      });
-    }
-
-    if (!article) {
-      throw new NotFoundException(`Bài viết '${identifier}' không tồn tại`);
-    }
-
-    return article;
-  }
 
   private async buildCommentResponses(
     comments: Comment[],
@@ -126,32 +97,24 @@ export class CommentsService {
 
   async create(
     slugOrId: string | number,
-    authorId: number,
+    author: User,
     createCommentDto: CreateCommentDto,
   ): Promise<CommentResponseDto> {
-    if (!createCommentDto.body || createCommentDto.body.trim() === '') {
-      throw new BadRequestException('Nội dung bình luận không được để trống');
-    }
-
-    const article = await this.findArticleEntity(slugOrId);
-
-    const author = await this.userRepository.findOne({
-      where: { id: authorId },
-    });
-    if (!author) {
-      throw new NotFoundException('Tác giả không tồn tại');
-    }
+    const article = await this.articlesService.findArticleEntity(slugOrId);
 
     const comment = this.commentRepository.create({
-      body: createCommentDto.body.trim(),
+      body: createCommentDto.body,
       articleId: article.id,
       article,
-      authorId,
+      authorId: author.id,
       author,
     });
 
     const savedComment = await this.commentRepository.save(comment);
-    const [result] = await this.buildCommentResponses([savedComment], authorId);
+    const [result] = await this.buildCommentResponses(
+      [savedComment],
+      author.id,
+    );
     return result;
   }
 
@@ -159,7 +122,7 @@ export class CommentsService {
     slugOrId: string | number,
     currentUserId?: number,
   ): Promise<CommentsResponseDto> {
-    const article = await this.findArticleEntity(slugOrId);
+    const article = await this.articlesService.findArticleEntity(slugOrId);
 
     const comments = await this.commentRepository.find({
       where: { articleId: article.id },
@@ -182,24 +145,24 @@ export class CommentsService {
     commentId: number,
     currentUserId: number,
   ): Promise<{ message: string }> {
-    const article = await this.findArticleEntity(slugOrId);
+    const article = await this.articlesService.findArticleEntity(slugOrId);
 
     const comment = await this.commentRepository.findOne({
       where: { id: commentId, articleId: article.id },
     });
 
     if (!comment) {
-      throw new NotFoundException('Bình luận không tồn tại');
+      throw new NotFoundException(this.i18n.t('comment.not_found'));
     }
 
     if (comment.authorId !== currentUserId) {
-      throw new ForbiddenException('Bạn không có quyền xóa bình luận này');
+      throw new ForbiddenException(this.i18n.t('comment.forbidden_delete'));
     }
 
     await this.commentRepository.remove(comment);
 
     return {
-      message: 'Xóa bình luận thành công',
+      message: this.i18n.t('comment.delete_success'),
     };
   }
 }

@@ -1,10 +1,8 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { I18nService } from 'nestjs-i18n';
+import { ArticlesService } from '../articles/articles.service';
 import { Article } from '../articles/entities/article.entity';
 import { AttachmentsService } from '../attachments/attachments.service';
 import { Follow } from '../users/entities/follow.entity';
@@ -68,12 +66,8 @@ describe('CommentsService', () => {
     remove: jest.fn().mockResolvedValue({}),
   };
 
-  const mockArticleRepository = {
-    findOne: jest.fn(),
-  };
-
-  const mockUserRepository = {
-    findOne: jest.fn(),
+  const mockArticlesService = {
+    findArticleEntity: jest.fn(),
   };
 
   const mockFollowRepository = {
@@ -82,6 +76,10 @@ describe('CommentsService', () => {
 
   const mockAttachmentsService = {
     findByAttachables: jest.fn().mockResolvedValue(new Map()),
+  };
+
+  const mockI18nService = {
+    t: jest.fn().mockImplementation((key: string) => key),
   };
 
   beforeEach(async () => {
@@ -95,12 +93,8 @@ describe('CommentsService', () => {
           useValue: mockCommentRepository,
         },
         {
-          provide: getRepositoryToken(Article),
-          useValue: mockArticleRepository,
-        },
-        {
-          provide: getRepositoryToken(User),
-          useValue: mockUserRepository,
+          provide: ArticlesService,
+          useValue: mockArticlesService,
         },
         {
           provide: getRepositoryToken(Follow),
@@ -110,6 +104,10 @@ describe('CommentsService', () => {
           provide: AttachmentsService,
           useValue: mockAttachmentsService,
         },
+        {
+          provide: I18nService,
+          useValue: mockI18nService,
+        },
       ],
     }).compile();
 
@@ -117,38 +115,38 @@ describe('CommentsService', () => {
   });
 
   describe('create', () => {
-    it('should create comment successfully', async () => {
-      mockArticleRepository.findOne.mockResolvedValue(mockArticle);
-      mockUserRepository.findOne.mockResolvedValue(mockCommenter);
+    it('should create comment successfully with author entity directly', async () => {
+      mockArticlesService.findArticleEntity.mockResolvedValue(mockArticle);
 
-      const result = await service.create(mockArticle.slug, 2, {
+      const result = await service.create(mockArticle.slug, mockCommenter, {
         body: 'Great article!',
       });
 
       expect(result.id).toBe(1);
       expect(result.body).toBe('Great article!');
       expect(result.author.id).toBe(2);
+      expect(mockArticlesService.findArticleEntity).toHaveBeenCalledWith(
+        mockArticle.slug,
+      );
       expect(mockCommentRepository.save).toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException if body is empty', async () => {
-      await expect(
-        service.create(mockArticle.slug, 2, { body: '' }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
     it('should throw NotFoundException if article not found', async () => {
-      mockArticleRepository.findOne.mockResolvedValue(null);
+      mockArticlesService.findArticleEntity.mockRejectedValue(
+        new NotFoundException('Article not found'),
+      );
 
       await expect(
-        service.create('invalid-slug', 2, { body: 'Hello' }),
+        service.create('invalid-slug', mockCommenter, {
+          body: 'Hello',
+        }),
       ).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('findAll', () => {
     it('should return comments for article', async () => {
-      mockArticleRepository.findOne.mockResolvedValue(mockArticle);
+      mockArticlesService.findArticleEntity.mockResolvedValue(mockArticle);
       mockCommentRepository.find.mockResolvedValue([mockComment]);
 
       const result = await service.findAll(mockArticle.slug, 1);
@@ -159,7 +157,9 @@ describe('CommentsService', () => {
     });
 
     it('should throw NotFoundException if article not found', async () => {
-      mockArticleRepository.findOne.mockResolvedValue(null);
+      mockArticlesService.findArticleEntity.mockRejectedValue(
+        new NotFoundException('Article not found'),
+      );
 
       await expect(service.findAll('invalid-slug')).rejects.toThrow(
         NotFoundException,
@@ -169,31 +169,36 @@ describe('CommentsService', () => {
 
   describe('delete', () => {
     it('should delete comment when user is author', async () => {
-      mockArticleRepository.findOne.mockResolvedValue(mockArticle);
+      mockArticlesService.findArticleEntity.mockResolvedValue(mockArticle);
       mockCommentRepository.findOne.mockResolvedValue({ ...mockComment });
 
       const result = await service.delete(mockArticle.slug, 1, 2);
 
-      expect(result.message).toContain('thành công');
+      expect(mockI18nService.t).toHaveBeenCalledWith('comment.delete_success');
+      expect(result.message).toBe('comment.delete_success');
       expect(mockCommentRepository.remove).toHaveBeenCalled();
     });
 
     it('should throw ForbiddenException when user is NOT the author', async () => {
-      mockArticleRepository.findOne.mockResolvedValue(mockArticle);
+      mockArticlesService.findArticleEntity.mockResolvedValue(mockArticle);
       mockCommentRepository.findOne.mockResolvedValue({ ...mockComment });
 
       await expect(service.delete(mockArticle.slug, 1, 999)).rejects.toThrow(
         ForbiddenException,
       );
+      expect(mockI18nService.t).toHaveBeenCalledWith(
+        'comment.forbidden_delete',
+      );
     });
 
-    it('should throw NotFoundException if comment not found', async () => {
-      mockArticleRepository.findOne.mockResolvedValue(mockArticle);
+    it('should throw NotFoundException if comment not found in article', async () => {
+      mockArticlesService.findArticleEntity.mockResolvedValue(mockArticle);
       mockCommentRepository.findOne.mockResolvedValue(null);
 
       await expect(service.delete(mockArticle.slug, 999, 2)).rejects.toThrow(
         NotFoundException,
       );
+      expect(mockI18nService.t).toHaveBeenCalledWith('comment.not_found');
     });
   });
 });

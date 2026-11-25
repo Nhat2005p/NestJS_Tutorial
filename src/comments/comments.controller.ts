@@ -59,7 +59,7 @@ export class CommentsController {
     @Req() req: Request & { user: User },
     @Body() createCommentDto: CreateCommentDto,
   ): Promise<CommentResponseDto> {
-    return this.commentsService.create(slug, req.user.id, createCommentDto);
+    return this.commentsService.create(slug, req.user, createCommentDto);
   }
 
   @Get()

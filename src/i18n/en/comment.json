@@ -1,0 +1,7 @@
+{
+  "not_found": "Comment does not exist",
+  "forbidden_delete": "You do not have permission to delete this comment",
+  "delete_success": "Comment deleted successfully",
+  "body_empty": "Comment body cannot be empty",
+  "body_too_long": "Comment body cannot exceed {max} characters"
+}

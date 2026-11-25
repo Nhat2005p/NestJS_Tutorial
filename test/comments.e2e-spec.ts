@@ -153,6 +153,22 @@ describe('Comments CRD Flow (e2e)', () => {
         .expect(400);
     });
 
+    it('should return 400 Bad Request when body contains only whitespace', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/articles/${articleSlug}/comments`)
+        .set('Authorization', `Bearer ${commenterToken}`)
+        .send({ body: '     ' })
+        .expect(400);
+    });
+
+    it('should return 400 Bad Request when body exceeds max length (1000)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/articles/${articleSlug}/comments`)
+        .set('Authorization', `Bearer ${commenterToken}`)
+        .send({ body: 'a'.repeat(1001) })
+        .expect(400);
+    });
+
     it('should return 404 Not Found when article does not exist', async () => {
       await request(app.getHttpServer())
         .post('/api/articles/non-existent-article-slug/comments')
@@ -236,10 +252,50 @@ describe('Comments CRD Flow (e2e)', () => {
         .expect(404);
     });
 
+    it('should return localized 404 error message when Accept-Language: en is sent', async () => {
+      const res = await request(app.getHttpServer())
+        .delete(`/api/articles/${articleSlug}/comments/999999`)
+        .set('Authorization', `Bearer ${commenterToken}`)
+        .set('Accept-Language', 'en')
+        .expect(404);
+
+      expect(res.body.message).toBe('Comment does not exist');
+    });
+
+    it('should return 404 Not Found when trying to delete comment of Article A using slug of Article B, and comment must not be deleted', async () => {
+      // 1. Create Article B
+      const artB = await request(app.getHttpServer())
+        .post('/api/articles')
+        .set('Authorization', `Bearer ${authorToken}`)
+        .send({
+          title: 'Article B for cross-article test',
+          description: 'Testing cross article comment deletion',
+          body: 'Content for article B...',
+          tagList: ['test'],
+        })
+        .expect(201);
+      const articleBSlug = artB.body.slug;
+
+      // 2. Try to delete comment of Article A using Article B slug
+      await request(app.getHttpServer())
+        .delete(`/api/articles/${articleBSlug}/comments/${commentId}`)
+        .set('Authorization', `Bearer ${commenterToken}`)
+        .expect(404);
+
+      // 3. Verify comment of Article A still exists
+      const listA = await request(app.getHttpServer())
+        .get(`/api/articles/${articleSlug}/comments`)
+        .expect(200);
+      expect(listA.body.comments.some((c: any) => c.id === commentId)).toBe(
+        true,
+      );
+    });
+
     it('should delete comment successfully by the author of the comment', async () => {
       const res = await request(app.getHttpServer())
         .delete(`/api/articles/${articleSlug}/comments/${commentId}`)
         .set('Authorization', `Bearer ${commenterToken}`)
+        .set('Accept-Language', 'vi')
         .expect(200);
 
       expect(res.body.message).toContain('thành công');

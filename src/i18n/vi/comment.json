@@ -1,0 +1,7 @@
+{
+  "not_found": "Bình luận không tồn tại",
+  "forbidden_delete": "Bạn không có quyền xóa bình luận này",
+  "delete_success": "Xóa bình luận thành công",
+  "body_empty": "Nội dung bình luận không được để trống",
+  "body_too_long": "Nội dung bình luận không được vượt quá {max} ký tự"
+}
